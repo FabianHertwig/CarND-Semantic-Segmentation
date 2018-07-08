@@ -53,11 +53,13 @@ tests.test_load_vgg(load_vgg, tf)
 
 def deconv(input_layer, filters, kernel, strides):
     return tf.layers.conv2d_transpose(input_layer, filters, kernel_size=kernel, strides=strides, padding='same',
-                            kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
+                                      kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
+                                      kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
 
 
 def conv_1x1(input_layer, filters):
     return tf.layers.conv2d(input_layer, filters, kernel_size=1, strides=(1, 1), padding='same',
+                            kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
                             kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
 
 
@@ -99,9 +101,12 @@ def optimize(nn_last_layer, correct_label, learning_rate, num_classes):
     labels = tf.reshape(correct_label, (-1, num_classes))
 
     cross_entropy_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=labels))
-    train_op = tf.train.AdamOptimizer(learning_rate).minimize(cross_entropy_loss)
+    l2_loss = tf.losses.get_regularization_loss()
+    loss = cross_entropy_loss + l2_loss
 
-    return logits, train_op, cross_entropy_loss
+    train_op = tf.train.AdamOptimizer(learning_rate).minimize(loss)
+
+    return logits, train_op, loss
 
 
 tests.test_optimize(optimize)
@@ -128,7 +133,7 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
             feed_dict = {input_image: images,
                          correct_label: labels,
                          keep_prob: 0.5,
-                         learning_rate: 0.001}
+                         learning_rate: 0.0001}
             _, loss = sess.run([train_op, cross_entropy_loss], feed_dict=feed_dict)
             print("Loss: {}".format(loss))
 
@@ -150,9 +155,8 @@ def run():
     # You'll need a GPU with at least 10 teraFLOPS to train on.
     #  https://www.cityscapes-dataset.com/
 
-    EPOCHS = 15
+    EPOCHS = 25
     BATCH_SIZE = 16
-
 
     with tf.Session() as sess:
         # Path to vgg model
@@ -172,7 +176,8 @@ def run():
 
         # TODO: Train NN using the train_nn function
         sess.run(tf.initialize_all_variables())
-        train_nn(sess, EPOCHS, BATCH_SIZE, get_batches_fn, train_op, loss, input_layer, correct_label, keep, learning_rate)
+        train_nn(sess, EPOCHS, BATCH_SIZE, get_batches_fn, train_op, loss, input_layer, correct_label, keep,
+                 learning_rate)
 
         # TODO: Save inference data using helper.save_inference_samples
         helper.save_inference_samples(runs_dir, data_dir, sess, image_shape, logits, keep, input_layer)
